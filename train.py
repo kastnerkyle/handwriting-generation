@@ -1,3 +1,4 @@
+from __future__ import print_function
 import os
 import argparse
 import numpy as np
@@ -8,11 +9,12 @@ from utils import next_experiment_path
 from batch_generator import BatchGenerator
 
 
+tf.set_random_seed(2899)
 # TODO: add help info
 parser = argparse.ArgumentParser()
 parser.add_argument('--seq_len', dest='seq_len', default=256, type=int)
 parser.add_argument('--batch_size', dest='batch_size', default=64, type=int)
-parser.add_argument('--epochs', dest='epochs', default=30, type=int)
+parser.add_argument('--epochs', dest='epochs', default=8, type=int)
 parser.add_argument('--window_mixtures', dest='window_mixtures', default=10, type=int)
 parser.add_argument('--output_mixtures', dest='output_mixtures', default=20, type=int)
 parser.add_argument('--lstm_layers', dest='lstm_layers', default=3, type=int)
@@ -43,7 +45,7 @@ class WindowLayer(object):
 
             a = tf.expand_dims(alpha, axis=2)
             b = tf.expand_dims(beta, axis=2)
-            k = tf.expand_dims(k + kappa, axis=2)
+            k = tf.expand_dims(k + 1./25. * kappa, axis=2)
 
             phi = tf.exp(-np.square(self.u_range + k) * b) * a  # [batch_size, mixtures, length]
             phi = tf.reduce_sum(phi, axis=1, keep_dims=True)  # [batch_size, 1, length]
@@ -130,12 +132,14 @@ class RNNModel(tf.nn.rnn_cell.RNNCell):
         prev_output = []
 
         for layer in range(self.layers):
+            #noisy_inputs = tf.random_normal(shape=[args.batch_size, 3]) + inputs
+            #x = tf.concat([noisy_inputs, window] + prev_output, axis=1)
             x = tf.concat([inputs, window] + prev_output, axis=1)
             with tf.variable_scope('lstm_{}'.format(layer)):
                 output, s = self.lstms[layer](x, tf.nn.rnn_cell.LSTMStateTuple(state[2 * layer],
                                                                                state[2 * layer + 1]))
                 prev_output = [output]
-            output_state += [*s]
+            output_state += [si for si in s]
 
             if layer == 0:
                 window, k, self.last_phi, finish = self.window_layer(output, k)
@@ -148,6 +152,7 @@ def create_graph(num_letters, batch_size,
                  window_mixtures=10, output_mixtures=20):
     graph = tf.Graph()
     with graph.as_default():
+        tf.set_random_seed(2899)
         coordinates = tf.placeholder(tf.float32, shape=[None, None, 3])
         sequence = tf.placeholder(tf.float32, shape=[None, None, num_letters])
         reset = tf.placeholder(tf.float32, shape=[None, 1])
@@ -186,7 +191,7 @@ def create_graph(num_letters, batch_size,
                         coords = tf.reshape(out_coords, [-1, 3])
                         xs, ys, es = tf.unstack(tf.expand_dims(coords, axis=2), axis=1)
 
-                        mrho = 1 - tf.square(rho)
+                        mrho = 1 - tf.square(rho) + 1E-6
                         xms = (xs - mu1) / std1
                         yms = (ys - mu2) / std2
                         z = tf.square(xms) + tf.square(yms) - 2. * rho * xms * yms
@@ -271,6 +276,7 @@ def main():
             print('\nEpoch {}'.format(e))
             for b in range(1, batches_per_epoch + 1):
                 coords, seq, reset, needed = batch_generator.next_batch()
+
                 if needed:
                     sess.run(vs.reset_states, feed_dict={vs.reset: reset})
                 l, s, _ = sess.run([vs.loss, vs.summary, vs.train_step],

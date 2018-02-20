@@ -1,7 +1,8 @@
 import os
-import random
 import pickle
 import numpy as np
+
+random_state = np.random.RandomState(2177)
 
 
 class BatchGenerator(object):
@@ -27,7 +28,7 @@ class BatchGenerator(object):
                                                axis=0)
                                 for l in labels])
         self.max_len = self.labels.shape[1]
-        self.indices = np.random.choice(len(self.dataset), size=(batch_size,), replace=False)
+        self.indices = random_state.choice(len(self.dataset), size=(batch_size,), replace=False)
         self.batches = np.zeros((batch_size,), dtype=np.int32)
 
     def next_batch(self):
@@ -37,7 +38,7 @@ class BatchGenerator(object):
         needed = False
         for i in range(self.batch_size):
             if self.batches[i] + self.seq_len + 1 > self.dataset[self.indices[i]].shape[0]:
-                ni = random.randint(0, len(self.dataset) - 1)
+                ni = random_state.randint(0, len(self.dataset) - 1)
                 self.indices[i] = ni
                 self.batches[i] = 0
                 reset_states[i] = 0.
@@ -45,7 +46,6 @@ class BatchGenerator(object):
             coords[i, :, :] = self.dataset[self.indices[i]][self.batches[i]: self.batches[i] + self.seq_len + 1]
             sequence[i] = self.labels[self.indices[i]]
             self.batches[i] += self.seq_len
-
         return coords, sequence, reset_states, needed
 
     @staticmethod
